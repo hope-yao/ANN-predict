@@ -4,70 +4,72 @@ import matplotlib.pyplot as plt
 def tanh(x):
     return np.tanh(x)
 
-def tanh_deriv(x):
+def tanh_d(x):
     return 1.0 - np.tanh(x) * np.tanh(x)
 
 def sigmoid(x):
-    return 1/(1+np.exp(x))
+    return 1/(1+np.exp(-x))
 
-def sigmoid_deriv(x):
+def sigmoid_d(x):
     return (1-sigmoid(x))*sigmoid(x)
 
 class NeuralNetwork:
     def __init__(self, layers):
-
-        self.activation = tanh
-        self.activation_deriv = tanh_deriv
-
+        #   number of layers in this net, visible and output layer included
+        self.num_layers = len(layers)
+        #   randomly initial weights from -0.5 to 0.5
         self.weights = []
-        #   for i in range(1, len(layers) - 1):
-        for i in range(1, len(layers) - 1):
-            #   the weights is from -0.5 to 0.5
-            self.weights.append(np.random.random((layers[i - 1] + 1, layers[i] + 1)) - 0.5)
+        for idx in range(1, self.num_layers - 1):
+            self.weights.append(np.random.random((layers[idx - 1] + 1, layers[idx])) - 0.5)
         self.weights.append((np.random.random((layers[-2] + 1, layers[-1])) - 0.5))
+        #   choosing activation function
+        self.f_activation = tanh
+        self.f_activation_d = tanh_d
 
-    def train(self, X, y, epochs, learning_rate=0.2):
-
-        # bias setting
-        temp = np.ones([X.shape[0], X.shape[1] + 1])
-        temp[:, 0:-1] = X
-        X = temp
-        y = np.array(y)
-
+    def train(self, x, y, epochs, learning_rate=0.2):
         for k in range(epochs):
-            i = k % len(X)
-            output = [X[i]]
 
-            # feed forward
-            for l in range(len(self.weights)):
-                output.append(self.activation(np.dot(output[l], self.weights[l])))  # output of each layer
+            for j in range(self.num_layers-1):
+                if j == 0:
+                    # activation of the first layer, which is just the input
+                    activation = [x[k % len(x)]]
+                    # activation of the second layer, computed by adding bias term
+                    next_activation = self.f_activation(np.dot(np.append(activation, 1.0), self.weights[j]))
+                else:
+                    # feed forward, compute the activation of each layer
+                    next_activation = self.f_activation(np.dot(np.append(activation[-1], 1.0), self.weights[j]))
+                activation.append(next_activation)  # actiation[0]: first layer
 
-            # last layer error gradient
-            error = y[i] - output[-1]
-            deltas = [error * self.activation_deriv(output[-1])]
+            # gradient of error function between the last two layers
+            absolute_er = y[i] - activation[-1]
+            er_d = self.f_activation_d(activation[-1])
+            er_func_grad = [absolute_er * er_d]   # er_func_grad[0]: last layer
 
-            # hidden layer error gradient
-            for l in range(len(output) - 2, 0, -1):
-                #   print self.weights
-                deltas.append(np.dot(self.weights[l], deltas[-1]) * self.activation_deriv(output[1]))
+            # gradient of error function between other layers
+            for j in range(self.num_layers - 2, 0, -1):
+                #  back propagate error gradient through weight matrix, for BOTH weight matrix and bias
+                er_grad_back = np.dot(self.weights[j], er_func_grad[-1])
+                er_d = self.f_activation_d(activation[j])
+                next_er_func_grad = er_grad_back[:-1] * er_d  # error of bias DOESN'T propagate
+                er_func_grad.append(next_er_func_grad)
 
-            # back propagation
-            for i in range(len(self.weights)):
-                layer = np.array([output[len(self.weights) - i - 1]])
-                delta = np.array([deltas[i]])
-                self.weights[len(self.weights) - i - 1] += learning_rate * np.dot(layer.T, delta)
-                print np.dot(layer.T, delta)
-        print np.sum(self.weights[0])
+            # gradient descent of weight matrix
+            for idx in range(1, self.num_layers, 1):
+                cnt = -idx  # counting begins from the top layer
+                aa = np.array(activation[cnt-1])  # MUST change into a two dimensional array
+                gg = np.array(er_func_grad[idx-1])
+                step = learning_rate * np.dot(np.array([aa]).T, np.array([gg]))
+                self.weights[cnt][0:-1] += step
+            # print np.sum(self.weights[0])
+            # how about bias terms???
 
     def predict(self, x):
-        x = np.array(x)
-        temp = np.ones([len(x) + 1])
-        temp[0:-1] = x
-        output = temp
-
-        for l in range(len(self.weights)):
-            output = self.activation(np.dot(output, self.weights[l]))
-        return output
+        for idx in range(self.num_layers-1):
+            if idx == 0:
+                activation = self.f_activation(np.dot(np.concatenate((x, [1])), self.weights[idx]))
+            else:
+                activation = self.f_activation(np.dot(np.concatenate((activation, [1])), self.weights[idx]))
+        return activation
 
 
 
@@ -75,7 +77,7 @@ class NeuralNetwork:
 # input_size = 17
 # nn = NeuralNetwork([input_size, 9, 5, 3, 1])
 input_size = 4   # number of data used as input of visible layer
-nn = NeuralNetwork([input_size, 5, 1])
+nn = NeuralNetwork([input_size, 3, 1])  # bias are not counted
 
 data = np.loadtxt("monthly_price.txt")
 test_num = 4     # hold some most recent data for test purpose, say four
